@@ -5,11 +5,26 @@ const { init, create, integrate, build, test, help, runMultipleCommands } = requ
 function parseArgs() {
     const command = process.argv[2];
     const args = process.argv.slice(3);
-    return { command, args };
+
+    // Collect filters from args
+    const filters = [];
+    const remainingArgs = [];
+
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--filter' && args[i + 1]) {
+            filters.push(args[i + 1]);
+            i++; // Skip the next argument as it's part of --filter
+        } else {
+            remainingArgs.push(args[i]);
+        }
+    }
+
+    return { command, args: remainingArgs, filters };
 }
 
 function run() {
-    const { command, args } = parseArgs();
+    const { command, args, filters } = parseArgs();
+
 
     switch (command) {
         case 'init':
@@ -28,8 +43,8 @@ function run() {
             test();
             break;
         case 'run':
-            const filter = args.includes('--filter') ? args[args.indexOf('--filter') + 1] : null;
-            runMultipleCommands(args.filter(arg => arg !== '--filter' && arg !== filter), filter);
+          runMultipleCommands(args, filters); // Pass filter
+          
             break;
         case 'help':
         default:

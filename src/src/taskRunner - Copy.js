@@ -27,6 +27,10 @@ function create(packageName) {
     }
 }
 
+function getDependencies(packageJson) {
+    return packageJson.dependencies || {};
+}
+
 function getAllPackages() {
     return fs.readdirSync(path.join(__dirname, '../packages')).filter(pkg => fs.statSync(path.join(__dirname, '../packages', pkg)).isDirectory());
 }
@@ -43,80 +47,43 @@ function runCommand(command, dir) {
                 return reject(error);
             }
             console.log(stdout);
-            resolve(stdout);
-
-
-            if (error) {
-                console.error(`Error executing command in ${dir}: ${error.message}`);
-                return reject(error);
-            }
-            console.log(`[${dir}] Command '${command}' completed in ${duration}ms`);
-            resolve(stdout);
-
-
-
+            resolve();
         });
     });
 }
 
-
-
-
-
-
-async function runMultipleCommands(commands, filters) {
+async function runMultipleCommands(commands, filter) {
     const packages = getAllPackages();
 
-    // Check if each command exists in repox.json
-    for (const command of commands) {
-        if (!repoxConfig.pipeline[command]) {
-            console.log(`Command '${command}' not found in repox.json.`);
-            return; // Exit if any command is not found in repox.json
-        }
-    }
+    const tasks = commands.map(command => {
+        return runCommandWithFilter(command, filter);
+    });
 
-    // If filters are provided, filter the packages
-    let filteredPackages = packages;
-    if (filters && filters.length > 0) {
-        filteredPackages = packages.filter(pkg => 
-            filters.some(filter => pkg.includes(filter))
-        );
-    }
-
-    // If no packages match the filters, notify the user
-    if (filteredPackages.length === 0) {
-        console.log(`No packages found for filters: ${filters.join(', ')}`);
-        return;
-    }
-
-    console.log(`Running commands '${commands.join(' ')}' for packages: ${filteredPackages.join(', ')}`);
-
-    // Collect tasks to run commands in parallel
-    const tasks = [];
-
-    // For each command, create tasks for each package
-    for (const command of commands) {
-        const shouldparallel = repoxConfig.pipeline[command] && repoxConfig.pipeline[command].parallel !== false;
-        
-        if (shouldparallel) {
-            // Run in parallel
-            filteredPackages.forEach(pkg => {
-                const packageDir = path.join(__dirname, '../packages', pkg);
-                tasks.push(runCommand(command, packageDir));
-            });
-        } else {
-            // Run sequentially
-            for (const pkg of filteredPackages) {
-                const packageDir = path.join(__dirname, '../packages', pkg);
-                tasks.push(runCommand(command, packageDir));
-            }
-        }
-    }
-
-    // Wait for all the tasks to complete (either parallel or sequential)
     await Promise.all(tasks);
 }
 
+async function runCommandWithFilter(command, filter) {
+    const packages = getAllPackages();
+
+    if (!repoxConfig.pipeline[command]) {
+        console.log(`Command '${command}' not found in repox.json.`);
+        return;
+    }
+
+    const filteredPackages = filter ? packages.filter(pkg => pkg.includes(filter)) : packages;
+
+    if (filteredPackages.length === 0) {
+        console.log(`No packages found for filter: ${filter}`);
+        return;
+    }
+
+    console.log(`Running command '${command}' for packages: ${filteredPackages.join(', ')}`);
+
+    await Promise.all(filteredPackages.map(pkg => {
+        const packageDir = path.join(__dirname, '../packages', pkg);
+        return runCommand(command, packageDir);
+    }));
+}
 
 async function build() {
     console.log('Building all packages...');
@@ -126,23 +93,13 @@ async function build() {
     await Promise.all(packages.map(pkg => {
         const packageDir = path.join(__dirname, '../packages', pkg);
         console.log(`Running build in ${packageDir}`);
-
-        // Check if there's a cached result
-        const cacheKey = `${pkg}-build-output`;
-        const cachedResult = getCache(cacheKey);
-        if (cachedResult) {
-            console.log(`Using cached result for ${pkg}:`, cachedResult);
-            return Promise.resolve(); // Skip building if cached
-        }
-
-        return runCommand('build', packageDir).then(stdout => {
-            // Cache the output after a successful build
-            setCache(cacheKey, { output: stdout }); // Save the actual output
-            console.log(`Cached build output for ${pkg}:`, stdout); // Log cached output
+        return runCommand('build', packageDir).then(() => {
+            // Cache something after a successful build
+            setCache(`${pkg}-build-output`, { /* your output data here */ });
+            console.log(`Cached build output for ${pkg}`);
         });
     }));
 }
-
 async function test() {
     console.log('Running tests...');
     const packages = getAllPackages();
@@ -205,6 +162,4 @@ Examples:
     `);
 }
 
-//module.exports = { init, create, integrate, build, test, help, runCommandWithFilter, runMultipleCommands };
-
-module.exports = { init, create, integrate, build, test, help,  runMultipleCommands };
+module.exports = { init, create, integrate, build, test, help, runCommandWithFilter, runMultipleCommands };
